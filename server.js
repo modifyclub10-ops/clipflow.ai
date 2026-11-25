@@ -8,15 +8,10 @@ const { promisify } = require('util');
 const execAsync = promisify(exec);
 const OpenAI = require('openai');
 
-// --- VPN / PROXY FIX ---
-const { ProxyAgent, setGlobalDispatcher } = require('undici');
-// Note: Agar aapka VPN port 7890 nahi hai (jaise 1080 ya 8080 hai), to yahan change kar lein
-try {
-  setGlobalDispatcher(new ProxyAgent('http://127.0.0.1:7890'));
-} catch (e) {
-  console.log("Proxy set nahi ho saka, direct connection try kar rahe hain.");
-}
-// -----------------------
+// --- FFmpeg Setup for Render ---
+const ffmpegPath = require('ffmpeg-static');
+process.env.PATH = `${path.dirname(ffmpegPath)}${path.delimiter}${process.env.PATH}`;
+// -------------------------------
 
 const app = express();
 app.use(express.json());
@@ -27,10 +22,9 @@ app.use('/outputs', express.static('outputs'));
 ['uploads', 'outputs'].forEach(d => !fs.existsSync(d) && fs.mkdirSync(d));
 
 const hasKey = process.env.OPENAI_API_KEY && process.env.OPENAI_API_KEY !== 'YOUR_OPENAI_API_KEY';
-// Timeout badha diya hai taake 27% par connection drop na ho
 const openai = hasKey ? new OpenAI({ 
   apiKey: process.env.OPENAI_API_KEY,
-  timeout: 120000 // 2 minutes
+  timeout: 120000 // 2 minutes timeout for long videos
 }) : null;
 
 const storage = multer.diskStorage({
@@ -74,7 +68,6 @@ async function findMoments(transcript, count) {
   return parsed.clips;
 }
 
-// --- CAPTIONS (SUBTITLES) BANANE KA FUNCTION ---
 function formatTime(seconds) {
   const date = new Date(0);
   date.setSeconds(seconds);
@@ -96,7 +89,6 @@ function createSRT(segments, clipStart, clipEnd, srtPath) {
   }
   fs.writeFileSync(srtPath, srtContent);
 }
-// ------------------------------------------------
 
 app.post('/api/process', upload.single('video'), async (req, res) => {
   try {
@@ -135,16 +127,12 @@ app.post('/api/process', upload.single('video'), async (req, res) => {
       let subtitleFilter = '';
       let srtPath = '';
 
-      // Agar captions check kiye hain aur transcript mojood hai
       if (wantCaptions && transcript && transcript.segments) {
         srtPath = `outputs/${base}_clip_${i}.srt`;
         createSRT(transcript.segments, m.start, m.end, srtPath);
-        
-        // TikTok style text (Yellow color, Black outline)
         subtitleFilter = `,subtitles=${srtPath}:force_style='Fontname=Arial,Fontsize=20,PrimaryColour=&H0000FFFF,OutlineColour=&H00000000,BorderStyle=1,Outline=3,Shadow=0,Alignment=2,MarginV=100'`;
       }
 
-      // Video cut, 9:16 resize, aur text burn karna
       const vf = `scale=1080:1920:force_original_aspect_ratio=increase,crop=1080:1920${subtitleFilter}`;
       await execAsync(`ffmpeg -y -ss ${m.start} -i "${videoPath}" -t ${dur} -vf "${vf}" -c:a copy "${final}"`);
 
