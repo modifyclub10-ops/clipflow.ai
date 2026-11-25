@@ -1,0 +1,12 @@
+clipflow-ai/
+│
+├── public/
+│   ├── index.html
+│   ├── styles.css
+│   └── app.js
+│
+├── uploads/
+├── outputs/
+├── server.js
+├── package.json
+└── .env
